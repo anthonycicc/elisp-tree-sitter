@@ -45,17 +45,35 @@ Example setting:
   (or tsc-dyn-dir
       (error "Could not locate the directory for `tsc-dyn'")))
 
+(defun tsc-dyn-get--ext ()
+  "Return the dynamic module extension, which is system-dependent."
+  (pcase system-type
+    ('windows-nt "dll")
+    ('darwin "dylib")
+    ((or 'gnu 'gnu/linux 'gnu/kfreebsd) "so")
+    ((or 'ms-dos 'cygwin) (error "Unsupported system-type %s" system-type))
+    (_ "so")))
+
+(defun tsc-dyn-get--file ()
+  "Return the dynamic module filename, which is system-dependent."
+  (format "tsc-dyn.%s" (tsc-dyn-get--ext)))
+
+(defun tsc-dyn-get--arch-dyn-file ()
+  "Return the dyn file for the right arch"
+  (pcase system-type
+    ('windows-nt "dll")
+    ('darwin (if (string-match "^aarch64-.*" system-configuration) "aarch64-apple-darwin.dylib" "x86_64-apple-darwin.dylib"))
+    ('gnu/linux "so")
+    (_ (error (format "Unsupported system-type %s" system-type)))))
+
 (defun tsc-dyn-get--download (version)
   "Download the pre-compiled VERSION of `tsc-dyn' module."
   (let* ((bin-dir (tsc-dyn-get--dir))
          (default-directory bin-dir)
          (_ (unless (file-directory-p bin-dir) (make-directory bin-dir)))
          ;; TODO: Handle systems with no pre-built binaries better.
-         (ext (pcase system-type
-                ('windows-nt "dll")
-                ('darwin "dylib")
-                ('gnu/linux "so")
-                (_ (error "Unsupported system-type %s" system-type))))
+         (ext (tsc-dyn-get--arch-dyn-file))
+         (dyn-file-name (tsc-dyn-get--file))
          (dyn-file (format "tsc-dyn.%s" ext))
          (gz-file (format "%s.gz" dyn-file))
          (uncompressed? (version< "0.7.0" version))
@@ -63,10 +81,10 @@ Example setting:
                       version (if uncompressed? dyn-file gz-file))))
     (message "Downloading %s" url)
     (if uncompressed?
-        (url-copy-file url dyn-file :ok-if-already-exists)
+        (url-copy-file url dyn-file-name :ok-if-already-exists)
       (url-copy-file url gz-file)
-      (when (file-exists-p dyn-file)
-        (delete-file dyn-file))
+      (when (file-exists-p dyn-file-name)
+        (delete-file dyn-file-name))
       ;; XXX: Uncompressing with `dired-compress-file' doesn't work on Windows.
       (dired-compress-file gz-file))
     (with-temp-file tsc-dyn-get--version-file
